@@ -488,6 +488,22 @@ Intent ที่มีอยู่:
             if has_product_info_inquiry:
                 used_intent = "product_info"
 
+        # ตรวจสอบ payment response patterns ก่อน (ลำดับความสำคัญสูง)
+        payment_cod_response_patterns = [
+            "ปลายทางค่ะ", "ปลายทางจ้า", "ปลายทางครับ", "ปลายทางคะ",
+            "เก็บปลายทางค่ะ", "เก็บปลายทางจ้า", "เก็บปลายทางครับ",
+            "CODค่ะ", "CODจ้า", "codค่ะ", "codจ้า"
+        ]
+        payment_transfer_response_patterns = [
+            "โอนค่ะ", "โอนจ้า", "โอนครับ", "โอนคะ",
+            "ธนาคารค่ะ", "ธนาคารจ้า", "ธนาคารครับ"
+        ]
+
+        if any(pattern in message for pattern in payment_cod_response_patterns):
+            used_intent = "payment_cod"
+        elif any(pattern in message for pattern in payment_transfer_response_patterns):
+            used_intent = "payment_transfer"
+
         # ให้ COD inquiry มีลำดับความสำคัญสูงกว่า payment intents อื่น
         elif has_cod_inquiry and has_cod_word:
             used_intent = "cod_inquiry"
