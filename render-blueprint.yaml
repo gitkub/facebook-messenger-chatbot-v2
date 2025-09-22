@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: facebook-messenger-chatbot
+    env: python
+    repo: https://github.com/gitkub/facebook-messenger-chatbot-v2
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    plan: starter
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: VERIFY_TOKEN
+        sync: false
+      - key: PAGE_ACCESS_TOKEN
+        sync: false
+      - key: APP_SECRET
+        sync: false

@@ -13,6 +13,7 @@ class IntentDetector:
         self.client = openai.OpenAI(api_key=openai_api_key)
         self.replies = self._load_replies(replies_file)
         self.business_context = self._load_business_context(context_file)
+        self.product_images = self._load_product_images("product_images.json")
         self.user_contexts = {}  # เก็บ context แยกตาม user_id
 
     def _get_user_context(self, user_id: str) -> Dict[str, Any]:
@@ -41,6 +42,15 @@ class IntentDetector:
                 return json.load(f)
         except FileNotFoundError:
             print(f"Info: {file_path} not found. Running without business context.")
+            return {}
+
+    def _load_product_images(self, file_path: str) -> Dict[str, Any]:
+        """โหลดข้อมูลรูปภาพสินค้าจากไฟล์ JSON"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            print(f"Info: {file_path} not found. Running without product images.")
             return {}
 
     def detect_intent(self, message: str, user_context: Dict[str, Any]) -> IntentResult:
@@ -435,16 +445,38 @@ Intent ที่มีอยู่:
         has_cod_inquiry = any(pattern in message for pattern in cod_inquiry_patterns)
         has_cod_word = any(word in message for word in cod_words)
 
-        # ตรวจสอบ product info inquiry patterns
-        product_info_patterns = [
-            "มีสีไหนบ้าง", "สีไหนบ้าง", "มีสีอะไรบ้าง", "สีอะไรบ้าง",
-            "มีไซส์ไหนบ้าง", "ไซส์ไหนบ้าง", "มีไซส์อะไรบ้าง", "ไซส์อะไรบ้าง",
-            "มีอะไรบ้าง", "สีและไซส์", "รายการสี", "รายการไซส์"
-        ]
-        has_product_info_inquiry = any(pattern in message for pattern in product_info_patterns)
+        # ตรวจสอบ image request intents ก่อน
+        image_patterns = {
+            "show_product_image": [
+                "ขอดูสี", "ดูสี", "ดูรูป", "ขอดูรูป", "รูปสี", "รูปกางเกง"
+            ],
+            "show_size_chart": [
+                "ตารางไซส์", "ตารางขนาด", "ดูไซส์", "ขอดูไซส์"
+            ],
+            "show_catalog": [
+                "แคตตาล็อก", "แคตาล็อค", "แคตตะล็อก", "ดูสินค้าทั้งหมด", "สินค้าทั้งหมด"
+            ]
+        }
 
-        if has_product_info_inquiry:
-            used_intent = "product_info"
+        # ตรวจสอบ image patterns
+        image_intent_found = False
+        for intent_name, patterns in image_patterns.items():
+            if any(pattern in message for pattern in patterns):
+                used_intent = intent_name
+                image_intent_found = True
+                break
+
+        # ตรวจสอบ product info inquiry patterns ถ้ายังไม่พบ image intent
+        if not image_intent_found:
+            product_info_patterns = [
+                "มีสีไหนบ้าง", "สีไหนบ้าง", "มีสีอะไรบ้าง", "สีอะไรบ้าง",
+                "มีไซส์ไหนบ้าง", "ไซส์ไหนบ้าง", "มีไซส์อะไรบ้าง", "ไซส์อะไรบ้าง",
+                "มีอะไรบ้าง", "สีและไซส์", "รายการสี", "รายการไซส์"
+            ]
+            has_product_info_inquiry = any(pattern in message for pattern in product_info_patterns)
+
+            if has_product_info_inquiry:
+                used_intent = "product_info"
 
         # ให้ COD inquiry มีลำดับความสำคัญสูงกว่า payment intents อื่น
         elif has_cod_inquiry and has_cod_word:
@@ -513,11 +545,16 @@ Intent ที่มีอยู่:
         # ดึงข้อความตอบกลับ
         reply = self.get_reply(used_intent, message, user_context)
 
+        # ตรวจสอบว่าต้องส่งรูปภาพหรือไม่
+        image_url = None
+        if used_intent in self.replies and self.replies[used_intent].get('image_required', False):
+            image_url = self._get_image_url(used_intent, message)
+
         # เก็บ intent และข้อความล่าสุดเพื่อใช้ในการวิเคราะห์ครั้งต่อไป
         user_context['last_intent'] = used_intent
         user_context['last_message'] = message
 
-        return {
+        result = {
             'detected_intent': intent_result.intent,
             'confidence': intent_result.confidence,
             'reason': intent_result.reason,
@@ -526,3 +563,33 @@ Intent ที่มีอยู่:
             'original_message': message,
             'order_info': user_context['order_info'].copy()
         }
+
+        # เพิ่ม image_url ถ้ามี
+        if image_url:
+            result['image_url'] = image_url
+
+        return result
+
+    def _get_image_url(self, intent: str, message: str) -> str:
+        """ดึง URL รูปภาพตาม intent และข้อความ"""
+        if not self.product_images:
+            return None
+
+        # สำหรับ show_product_image - หาสีที่ขอดู
+        if intent == "show_product_image":
+            colors = ["โกโก้", "โกโก", "ดำ", "ขาว", "ครีม", "ชมพู", "ฟ้า", "เทา", "กรม"]
+            for color in colors:
+                if color in message:
+                    return self.product_images.get("product_images", {}).get(color)
+            # ถ้าไม่พบสี ให้ส่งรูปแรก
+            return list(self.product_images.get("product_images", {}).values())[0] if self.product_images.get("product_images") else None
+
+        # สำหรับ show_size_chart
+        elif intent == "show_size_chart":
+            return self.product_images.get("size_chart")
+
+        # สำหรับ show_catalog
+        elif intent == "show_catalog":
+            return self.product_images.get("product_catalog")
+
+        return None

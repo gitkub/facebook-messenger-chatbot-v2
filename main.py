@@ -46,8 +46,8 @@ def verify_signature(payload: bytes, signature: str) -> bool:
 
     return hmac.compare_digest(f"sha256={expected_signature}", signature)
 
-async def send_message(recipient_id: str, message: str) -> bool:
-    """ส่งข้อความกลับไปยังผู้ใช้ผ่าน Facebook Send API"""
+async def send_message(recipient_id: str, message: str = None, image_url: str = None) -> bool:
+    """ส่งข้อความหรือรูปภาพกลับไปยังผู้ใช้ผ่าน Facebook Send API"""
     if not PAGE_ACCESS_TOKEN:
         print("PAGE_ACCESS_TOKEN not found")
         return False
@@ -58,9 +58,23 @@ async def send_message(recipient_id: str, message: str) -> bool:
         "Content-Type": "application/json"
     }
 
+    # สร้าง message payload ตามประเภทที่ส่ง
+    if image_url:
+        message_content = {
+            "attachment": {
+                "type": "image",
+                "payload": {
+                    "url": image_url,
+                    "is_reusable": True
+                }
+            }
+        }
+    else:
+        message_content = {"text": message}
+
     data = {
         "recipient": {"id": recipient_id},
-        "message": {"text": message},
+        "message": message_content,
         "access_token": PAGE_ACCESS_TOKEN
     }
 
@@ -95,7 +109,15 @@ async def process_message(sender_id: str, message_text: str):
         print(f"Intent analysis result: {json.dumps(result, ensure_ascii=False, indent=2)}")
 
         # ส่งข้อความตอบกลับ
-        await send_message(sender_id, result['reply'])
+        if 'image_url' in result and result['image_url']:
+            # ส่งรูปภาพ
+            await send_message(sender_id, image_url=result['image_url'])
+            # ส่งข้อความตอบกลับ (ถ้ามี)
+            if result['reply']:
+                await send_message(sender_id, result['reply'])
+        else:
+            # ส่งเฉพาะข้อความ
+            await send_message(sender_id, result['reply'])
 
     except Exception as e:
         print(f"Error processing message: {e}")
