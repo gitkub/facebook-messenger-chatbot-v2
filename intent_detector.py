@@ -445,7 +445,17 @@ Intent ที่มีอยู่:
         has_cod_inquiry = any(pattern in message for pattern in cod_inquiry_patterns)
         has_cod_word = any(word in message for word in cod_words)
 
-        # ตรวจสอบ image request intents ก่อน
+        # ตรวจสอบ greeting patterns ก่อน
+        greeting_patterns = [
+            "สวัสดี", "หวัดดี", "hello", "hi", "ดี", "สนใจ",
+            "เฮ้ย", "ฮาย", "ฮัลโหล", "สบายดี"
+        ]
+        has_greeting = any(pattern in message.lower() for pattern in greeting_patterns)
+
+        if has_greeting and len(message) < 20:  # คำทักทายสั้นๆ
+            used_intent = "greeting"
+
+        # ตรวจสอบ image request intents
         image_patterns = {
             "show_product_image": [
                 "ขอดูสี", "ดูสี", "ดูรูป", "ขอดูรูป", "รูปสี", "รูปกางเกง"
@@ -574,6 +584,17 @@ Intent ที่มีอยู่:
         """ดึง URL รูปภาพตาม intent และข้อความ"""
         if not self.product_images:
             return None
+
+        # ตรวจสอบว่า intent มี image_type กำหนดไว้หรือไม่
+        intent_config = self.replies.get(intent, {})
+        image_type = intent_config.get("image_type")
+
+        if image_type:
+            # ใช้ image_type ที่กำหนดใน replies.json
+            if image_type == "product_catalog":
+                return self.product_images.get("product_catalog")
+            elif image_type == "size_chart":
+                return self.product_images.get("size_chart")
 
         # สำหรับ show_product_image - หาสีที่ขอดู
         if intent == "show_product_image":
