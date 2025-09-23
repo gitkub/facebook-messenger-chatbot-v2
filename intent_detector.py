@@ -444,6 +444,28 @@ Intent ที่มีอยู่:
                 reply = reply.replace('[ที่อยู่]', addr_info.get('extracted_address', ''))
                 reply = reply.replace('[เบอร์]', addr_info.get('extracted_phone', ''))
 
+            # ถ้าเป็น order_edit ให้แทนที่สรุปออเดอร์
+            elif intent == 'order_edit' and user_context and user_context.get('order_info'):
+                order_info = user_context['order_info']
+                colors = order_info.get('colors', [])
+                size = order_info.get('size', '')
+                total_quantity = order_info.get('total_quantity', 0)
+
+                if colors:
+                    colors_text = ", ".join([f"{item['color']} {item['quantity']} ตัว" for item in colors])
+                    order_summary = f"📋 ออเดอร์ปัจจุบัน:\n🎨 สี: {colors_text}"
+
+                    if size:
+                        order_summary += f"\n📏 ไซส์: {size}"
+
+                    if total_quantity > 0:
+                        price_info = self._calculate_price(total_quantity)
+                        order_summary += f"\n🔢 จำนวน: {total_quantity} ตัว\n💰 ยอดรวม: {price_info['total']} บาท"
+
+                    reply = reply.replace('[order_summary]', order_summary)
+                else:
+                    reply = reply.replace('[order_summary]', "📋 ยังไม่มีออเดอร์ในระบบค่ะ")
+
             # ถ้าเป็น size_recommendation ให้แทนที่คำแนะนำไซส์
             elif intent == 'size_recommendation':
                 waist_match = re.search(r'เอว\s*(\d+)', message)
@@ -685,6 +707,9 @@ Intent ที่มีอยู่:
                     if size in message.upper():
                         user_context['order_info']['size'] = size
                         break
+        elif used_intent == 'order_edit':
+            # จัดการการแก้ไขออเดอร์
+            self._process_order_edit(message, user_context)
         elif used_intent == 'address_received' and 'address_info' not in user_context['order_info']:
             # เก็บข้อมูลที่อยู่หากยังไม่ได้เก็บ
             address_info = self._analyze_address(message)
@@ -778,6 +803,42 @@ Intent ที่มีอยู่:
             return self.product_images.get("product_catalog")
 
         return None
+
+    def _process_order_edit(self, message: str, user_context: Dict[str, Any]) -> None:
+        """ประมวลผลการแก้ไขออเดอร์"""
+        colors = ["โกโก้", "โกโก", "ดำ", "ขาว", "ครีม", "ชมพู", "ฟ้า", "เทา", "กรม"]
+
+        # ตรวจสอบการเปลี่ยนสี (เช่น "เปลี่ยนดำเป็นชมพู", "แก้ไขครีมเป็นดำ")
+        old_color = None
+        new_color = None
+
+        # หาสีเก่าและสีใหม่
+        if "เป็น" in message:
+            parts = message.split("เป็น")
+            if len(parts) >= 2:
+                # หาสีเก่าในส่วนแรก
+                for color in colors:
+                    if color in parts[0]:
+                        old_color = color
+                        break
+
+                # หาสีใหม่ในส่วนหลัง
+                for color in colors:
+                    if color in parts[1]:
+                        new_color = color
+                        break
+
+        # ถ้าพบสีทั้งคู่ ให้ทำการแก้ไข
+        if old_color and new_color and user_context['order_info'].get('colors'):
+            colors_list = user_context['order_info']['colors']
+
+            # ค้นหาและแก้ไขสีเก่า
+            for color_item in colors_list:
+                if color_item['color'] == old_color:
+                    color_item['color'] = new_color
+                    break
+
+            user_context['order_info']['colors'] = colors_list
 
     def reset_manual_mode(self, user_id: str) -> bool:
         """รีเซ็ต manual mode สำหรับ user คืนค่า True ถ้าสำเร็จ"""
