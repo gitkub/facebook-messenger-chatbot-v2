@@ -113,6 +113,11 @@ async def process_message(sender_id: str, message_text: str):
             print(f"User {sender_id} is in manual mode - bot will not respond")
             return
 
+        # ตรวจสอบ waiting state - ถ้ากำลังรอข้อความเพิ่มเติม
+        if result.get('used_intent') == 'waiting_for_more':
+            print(f"User {sender_id} is sending rapid messages - waiting for more")
+            return
+
         # ส่งข้อความตอบกลับ
         if 'image_url' in result and result['image_url']:
             # ส่งรูปภาพ

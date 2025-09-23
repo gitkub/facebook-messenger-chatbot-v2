@@ -1,5 +1,6 @@
 import json
 import openai
+import time
 from typing import Dict, Any
 from pydantic import BaseModel
 
@@ -15,6 +16,7 @@ class IntentDetector:
         self.business_context = self._load_business_context(context_file)
         self.product_images = self._load_product_images("product_images.json")
         self.user_contexts = {}  # เก็บ context แยกตาม user_id
+        self.message_history = {}  # เก็บประวัติข้อความล่าสุดสำหรับ multi-message detection
 
     def _get_user_context(self, user_id: str) -> Dict[str, Any]:
         """ดึงหรือสร้าง context สำหรับ user"""
@@ -24,6 +26,11 @@ class IntentDetector:
                 'last_message': None,
                 'order_info': {},
                 'manual_mode': False
+            }
+            # เริ่มต้น message history
+            self.message_history[user_id] = {
+                'messages': [],
+                'last_update': time.time()
             }
         return self.user_contexts[user_id]
 
@@ -360,7 +367,27 @@ Intent ที่มีอยู่:
                 'manual_mode': True
             }
 
-        intent_result = self.detect_intent(message, user_context)
+        # Multi-Message Detection: รวมข้อความที่ส่งเร็วติดกัน
+        current_time = time.time()
+        combined_message = self._handle_multi_message(user_id, message, current_time)
+
+        # ถ้า combined_message คืนค่า None หมายความว่ากำลังรอข้อความเพิ่มเติม
+        if combined_message is None:
+            return {
+                'detected_intent': 'waiting_for_more',
+                'confidence': 1.0,
+                'reason': 'Waiting for additional rapid messages',
+                'used_intent': 'waiting_for_more',
+                'reply': None,  # ไม่ส่งข้อความตอบกลับ รอข้อความเพิ่มเติม
+                'original_message': message,
+                'order_info': {},
+                'waiting': True
+            }
+
+        # ใช้ combined_message สำหรับการประมวลผล
+        actual_message = combined_message
+
+        intent_result = self.detect_intent(actual_message, user_context)
 
         # ตัดสินใจว่าจะใช้ intent ที่ตรวจจับได้หรือใช้ fallback
         if intent_result.confidence >= confidence_threshold and intent_result.intent != 'none':
@@ -658,3 +685,103 @@ Intent ที่มีอยู่:
         """ตรวจสอบสถานะ manual mode ของ user"""
         user_context = self._get_user_context(user_id)
         return user_context.get('manual_mode', False)
+
+    def _handle_multi_message(self, user_id: str, message: str, current_time: float) -> str:
+        """จัดการ multi-message detection"""
+        # ดึง message history
+        if user_id not in self.message_history:
+            self.message_history[user_id] = {
+                'messages': [],
+                'last_update': time.time()
+            }
+
+        history = self.message_history[user_id]
+
+        # ตรวจสอบว่าเป็น rapid message หรือไม่ (ภายใน 5 วินาที)
+        time_diff = current_time - history['last_update']
+        is_rapid = time_diff <= 5.0 and len(history['messages']) > 0
+
+        # เพิ่มข้อความใหม่เข้า history
+        history['messages'].append(message)
+        history['last_update'] = current_time
+
+        # ถ้าเป็นข้อความแรก ให้รอข้อความเพิ่มเติม 3 วินาที
+        if len(history['messages']) == 1:
+            # ตรวจสอบว่าข้อความเดียวมีข้อมูลครบหรือไม่ หรือเป็นข้อความทั่วไป
+            if self._has_complete_order_info(message) or self._is_general_message(message):
+                # ข้อมูลครบแล้ว หรือเป็นข้อความทั่วไป ประมวลผลทันที
+                combined = " ".join(history['messages'])
+                history['messages'] = []
+                return combined
+            else:
+                # ข้อมูลไม่ครบ รอข้อความเพิ่มเติม
+                return None
+
+        # ถ้าไม่ใช่ rapid message ให้ประมวลผลทันที
+        if not is_rapid:
+            combined = " ".join(history['messages'])
+            # ล้าง history
+            history['messages'] = []
+            return combined
+
+        # ถ้าเป็น rapid message ตรวจสอบว่าข้อมูลครบหรือไม่
+        combined = " ".join(history['messages'])
+        if self._has_complete_order_info(combined):
+            # ข้อมูลครบแล้ว ประมวลผลทันที
+            history['messages'] = []
+            return combined
+
+        # ถ้าข้อความมี 3 ข้อความแล้ว ให้ประมวลผล (ไม่รอแล้ว)
+        if len(history['messages']) >= 3:
+            combined = " ".join(history['messages'])
+            history['messages'] = []
+            return combined
+
+        # ข้อมูลยังไม่ครบ รอข้อความเพิ่มเติม
+        return None
+
+    def _has_complete_order_info(self, message: str) -> bool:
+        """ตรวจสอบว่าข้อความมีข้อมูลครบสำหรับสั่งซื้อหรือไม่"""
+        # ตรวจสอบสี
+        colors = ["โกโก้", "โกโก", "ดำ", "ขาว", "ครีม", "ชมพู", "ฟ้า", "เทา", "กรม"]
+        has_color = any(color in message for color in colors)
+
+        # ตรวจสอบไซส์
+        sizes = ["M", "L", "XL", "XXL"]
+        has_size = any(size in message.upper() for size in sizes)
+
+        # ตรวจสอบจำนวน
+        import re
+        has_quantity = bool(re.search(r'\d+', message))
+
+        # ถ้ามีสีและ (ไซส์หรือจำนวน) ถือว่าข้อมูลครบ
+        return has_color and (has_size or has_quantity)
+
+    def _is_general_message(self, message: str) -> bool:
+        """ตรวจสอบว่าเป็นข้อความทั่วไป ไม่ใช่การสั่งซื้อ"""
+        general_patterns = [
+            "สวัสดี", "หวัดดี", "hello", "hi", "ดี", "สนใจ",
+            "ราคา", "เท่าไหร่", "ค่าส่ง", "โปร", "ส่วนลด",
+            "มีสีไหนบ้าง", "มีไซส์ไหนบ้าง", "ขอดูรูป", "ดูรูป",
+            "ตารางไซส์", "วิธีสั่ง", "เปิดกี่โมง", "ขอบคุณ",
+            "ไม่เอา", "ยกเลิก", "เปลี่ยนใจ"
+        ]
+
+        # ตรวจสอบว่าข้อความมีคำทั่วไปหรือไม่
+        return any(pattern in message.lower() for pattern in general_patterns)
+
+    def process_delayed_message(self, user_id: str, confidence_threshold: float = 0.55) -> Dict[str, Any]:
+        """ประมวลผลข้อความที่รอเวลาครบแล้ว (เรียกจาก timer)"""
+        if user_id not in self.message_history:
+            return None
+
+        history = self.message_history[user_id]
+        if not history['messages']:
+            return None
+
+        # รวมข้อความทั้งหมด
+        combined_message = " ".join(history['messages'])
+        history['messages'] = []
+
+        # ประมวลผลข้อความรวม
+        return self.process_message(combined_message, user_id, confidence_threshold)
