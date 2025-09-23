@@ -1,6 +1,5 @@
 import json
 import openai
-import time
 from typing import Dict, Any
 from pydantic import BaseModel
 
@@ -16,7 +15,6 @@ class IntentDetector:
         self.business_context = self._load_business_context(context_file)
         self.product_images = self._load_product_images("product_images.json")
         self.user_contexts = {}  # เก็บ context แยกตาม user_id
-        self.message_history = {}  # เก็บประวัติข้อความล่าสุดสำหรับ multi-message detection
 
     def _get_user_context(self, user_id: str) -> Dict[str, Any]:
         """ดึงหรือสร้าง context สำหรับ user"""
@@ -26,12 +24,6 @@ class IntentDetector:
                 'last_message': None,
                 'order_info': {},
                 'manual_mode': False
-            }
-        # เริ่มต้น message history แยกต่างหาก (ถ้ายังไม่มี)
-        if user_id not in self.message_history:
-            self.message_history[user_id] = {
-                'messages': [],
-                'last_update': time.time()
             }
         return self.user_contexts[user_id]
 
@@ -368,27 +360,7 @@ Intent ที่มีอยู่:
                 'manual_mode': True
             }
 
-        # Multi-Message Detection: รวมข้อความที่ส่งเร็วติดกัน
-        current_time = time.time()
-        combined_message = self._handle_multi_message(user_id, message, current_time)
-
-        # ถ้า combined_message คืนค่า None หมายความว่ากำลังรอข้อความเพิ่มเติม
-        if combined_message is None:
-            return {
-                'detected_intent': 'waiting_for_more',
-                'confidence': 1.0,
-                'reason': 'Waiting for additional rapid messages',
-                'used_intent': 'waiting_for_more',
-                'reply': None,  # ไม่ส่งข้อความตอบกลับ รอข้อความเพิ่มเติม
-                'original_message': message,
-                'order_info': {},
-                'waiting': True
-            }
-
-        # ใช้ combined_message สำหรับการประมวลผล
-        actual_message = combined_message
-
-        intent_result = self.detect_intent(actual_message, user_context)
+        intent_result = self.detect_intent(message, user_context)
 
         # ตัดสินใจว่าจะใช้ intent ที่ตรวจจับได้หรือใช้ fallback
         if intent_result.confidence >= confidence_threshold and intent_result.intent != 'none':
@@ -687,163 +659,4 @@ Intent ที่มีอยู่:
         user_context = self._get_user_context(user_id)
         return user_context.get('manual_mode', False)
 
-    def _handle_multi_message(self, user_id: str, message: str, current_time: float) -> str:
-        """จัดการ multi-message detection"""
-        # ดึง message history
-        if user_id not in self.message_history:
-            self.message_history[user_id] = {
-                'messages': [],
-                'last_update': time.time()
-            }
 
-        history = self.message_history[user_id]
-
-        # ตรวจสอบว่าเป็น rapid message หรือไม่ (ภายใน 10 วินาที)
-        # เพิ่มจาก 5 เป็น 10 วินาที เพื่อให้เวลาลูกค้าพิมพ์หลายสี
-        time_diff = current_time - history['last_update']
-        is_rapid = time_diff <= 10.0 and len(history['messages']) > 0
-
-        # เพิ่มข้อความใหม่เข้า history
-        history['messages'].append(message)
-        history['last_update'] = current_time
-
-        # ถ้าเป็นข้อความแรก ให้รอข้อความเพิ่มเติม 3 วินาที
-        if len(history['messages']) == 1:
-            # ตรวจสอบว่าข้อความเดียวมีข้อมูลครบหรือไม่ หรือเป็นข้อความทั่วไป
-            if self._has_complete_order_info(message) or self._is_general_message(message):
-                # ข้อมูลครบแล้ว หรือเป็นข้อความทั่วไป ประมวลผลทันที
-                combined = " ".join(history['messages'])
-                history['messages'] = []
-                return combined
-            # ถ้ามีหลายสีในข้อความเดียว ให้ประมวลผลทันที (เช่น "ดำ ครีม")
-            elif self._has_multiple_colors(message):
-                combined = " ".join(history['messages'])
-                history['messages'] = []
-                return combined
-            # ถ้าเป็นสีเดียวและมี context สีอื่นใน order_info ให้รอเพิ่มเติม
-            elif self._is_single_color_only(message) and self._has_existing_colors_in_context(user_id):
-                # มีสีอื่นอยู่แล้ว รอข้อความเพิ่มเติม (ไซส์)
-                return None
-            else:
-                # ข้อมูลไม่ครบ รอข้อความเพิ่มเติม
-                return None
-
-        # ตรวจสอบข้อความรวมว่าครบหรือไม่
-        combined = " ".join(history['messages'])
-
-        # ถ้าข้อมูลครบแล้ว ประมวลผลทันที
-        if self._has_complete_order_info(combined):
-            history['messages'] = []
-            return combined
-
-        # ถ้าข้อความมี 4 ข้อความแล้ว ให้ประมวลผล (ไม่รอแล้ว)
-        # เปลี่ยนจาก 3 เป็น 4 เพื่อรองรับกรณี หลายสี + ไซส์
-        if len(history['messages']) >= 4:
-            combined = " ".join(history['messages'])
-            history['messages'] = []
-            return combined
-
-        # ถ้าไม่ใช่ rapid message และมีข้อมูลครบแล้ว ให้ประมวลผล
-        if not is_rapid and len(history['messages']) > 1:
-            combined = " ".join(history['messages'])
-            # ตรวจสอบว่าข้อมูลครบหรือไม่ก่อนประมวลผล
-            if self._has_complete_order_info(combined):
-                history['messages'] = []
-                return combined
-            else:
-                # ข้อมูลยังไม่ครบ ให้รอต่อ (แปลงเป็น rapid mode)
-                history['last_update'] = current_time
-                return None
-
-        # ถ้าไม่ใช่ rapid message และเป็นข้อความเดียว ให้ประมวลผลทันที (กรณีข้อความทั่วไป)
-        if not is_rapid and len(history['messages']) == 1:
-            if self._is_general_message(message):
-                combined = " ".join(history['messages'])
-                history['messages'] = []
-                return combined
-
-        # ข้อมูลยังไม่ครบ รอข้อความเพิ่มเติม
-        return None
-
-    def _has_complete_order_info(self, message: str) -> bool:
-        """ตรวจสอบว่าข้อความมีข้อมูลครบสำหรับสั่งซื้อหรือไม่"""
-        # ตรวจสอบสี
-        colors = ["โกโก้", "โกโก", "ดำ", "ขาว", "ครีม", "ชมพู", "ฟ้า", "เทา", "กรม"]
-        has_color = any(color in message for color in colors)
-
-        # ตรวจสอบไซส์
-        sizes = ["M", "L", "XL", "XXL"]
-        has_size = any(size in message.upper() for size in sizes)
-
-        # ตรวจสอบจำนวน
-        import re
-        has_quantity = bool(re.search(r'\d+', message))
-
-        # ถ้ามีสีและ (ไซส์หรือจำนวน) ถือว่าข้อมูลครบ
-        return has_color and (has_size or has_quantity)
-
-    def _is_general_message(self, message: str) -> bool:
-        """ตรวจสอบว่าเป็นข้อความทั่วไป ไม่ใช่การสั่งซื้อ"""
-        general_patterns = [
-            "สวัสดี", "หวัดดี", "hello", "hi", "ดี", "สนใจ",
-            "ราคา", "เท่าไหร่", "ค่าส่ง", "โปร", "ส่วนลด",
-            "มีสีไหนบ้าง", "มีไซส์ไหนบ้าง", "ขอดูรูป", "ดูรูป",
-            "ตารางไซส์", "วิธีสั่ง", "เปิดกี่โมง", "ขอบคุณ",
-            "ไม่เอา", "ยกเลิก", "เปลี่ยนใจ"
-        ]
-
-        # ตรวจสอบว่าข้อความมีคำทั่วไปหรือไม่
-        return any(pattern in message.lower() for pattern in general_patterns)
-
-    def _has_multiple_colors(self, message: str) -> bool:
-        """ตรวจสอบว่าข้อความมีหลายสีหรือไม่"""
-        colors = ["โกโก้", "โกโก", "ดำ", "ขาว", "ครีม", "ชมพู", "ฟ้า", "เทา", "กรม"]
-        found_colors = []
-
-        for color in colors:
-            if color in message:
-                found_colors.append(color)
-
-        return len(found_colors) >= 2
-
-    def _is_single_color_only(self, message: str) -> bool:
-        """ตรวจสอบว่าเป็นสีเดียวอย่างเดียวหรือไม่ (ไม่มีไซส์/จำนวน)"""
-        colors = ["โกโก้", "โกโก", "ดำ", "ขาว", "ครีม", "ชมพู", "ฟ้า", "เทา", "กรม"]
-        sizes = ["M", "L", "XL", "XXL"]
-
-        # ตรวจสอบว่ามีสีหนึ่งสี
-        found_color = False
-        for color in colors:
-            if color in message:
-                if found_color:  # มีสีมากกว่า 1 สี
-                    return False
-                found_color = True
-
-        # ตรวจสอบว่าไม่มีไซส์หรือจำนวน
-        has_size = any(size in message.upper() for size in sizes)
-        has_number = any(char.isdigit() for char in message)
-
-        return found_color and not has_size and not has_number
-
-    def _has_existing_colors_in_context(self, user_id: str) -> bool:
-        """ตรวจสอบว่ามีสีอื่นใน user context หรือไม่"""
-        user_context = self._get_user_context(user_id)
-        order_info = user_context.get('order_info', {})
-        colors = order_info.get('colors', [])
-        return len(colors) > 0
-
-    def process_delayed_message(self, user_id: str, confidence_threshold: float = 0.55) -> Dict[str, Any]:
-        """ประมวลผลข้อความที่รอเวลาครบแล้ว (เรียกจาก timer)"""
-        if user_id not in self.message_history:
-            return None
-
-        history = self.message_history[user_id]
-        if not history['messages']:
-            return None
-
-        # รวมข้อความทั้งหมด
-        combined_message = " ".join(history['messages'])
-        history['messages'] = []
-
-        # ประมวลผลข้อความรวม
-        return self.process_message(combined_message, user_id, confidence_threshold)
