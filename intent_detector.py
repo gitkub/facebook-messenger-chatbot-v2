@@ -27,7 +27,8 @@ class IntentDetector:
                 'order_info': {},
                 'manual_mode': False
             }
-            # เริ่มต้น message history
+        # เริ่มต้น message history แยกต่างหาก (ถ้ายังไม่มี)
+        if user_id not in self.message_history:
             self.message_history[user_id] = {
                 'messages': [],
                 'last_update': time.time()
@@ -742,11 +743,17 @@ Intent ที่มีอยู่:
             history['messages'] = []
             return combined
 
-        # ถ้าไม่ใช่ rapid message และมีข้อความมากกว่า 1 ข้อความ ให้ประมวลผล
+        # ถ้าไม่ใช่ rapid message และมีข้อมูลครบแล้ว ให้ประมวลผล
         if not is_rapid and len(history['messages']) > 1:
             combined = " ".join(history['messages'])
-            history['messages'] = []
-            return combined
+            # ตรวจสอบว่าข้อมูลครบหรือไม่ก่อนประมวลผล
+            if self._has_complete_order_info(combined):
+                history['messages'] = []
+                return combined
+            else:
+                # ข้อมูลยังไม่ครบ ให้รอต่อ (แปลงเป็น rapid mode)
+                history['last_update'] = current_time
+                return None
 
         # ถ้าไม่ใช่ rapid message และเป็นข้อความเดียว ให้ประมวลผลทันที (กรณีข้อความทั่วไป)
         if not is_rapid and len(history['messages']) == 1:
