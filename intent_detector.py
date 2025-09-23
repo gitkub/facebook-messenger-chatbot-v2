@@ -154,7 +154,17 @@ Intent ที่มีให้เลือก:
 
 ตัวอย่างรูปแบบสำคัญ:
 - "เอาดำ ครีม ฟ้า XL ปลายทางค่ะ" = order_confirm (มีครบ สี+ไซส์+จำนวน)
+- "Lสีโกโก้1ตัวก่อน" = order_confirm (มีครบ ไซส์+สี+จำนวน)
+- "ดำ M 2 ตัว" = order_confirm (มีครบ สี+ไซส์+จำนวน)
 - "ดำ 2 ตัว" = color_with_quantity (สี+จำนวน ไม่มีไซส์)
+- "M" = size_after_color_quantity (ไซส์เดียว หลังแจ้งสี+จำนวนแล้ว)
+- "รับ 2 ตัว 340 ค่าส่ง 30" = price_inquiry (เริ่มด้วยราคา ต้องการสั่งซื้อ)
+- "รับ 1 ตัว 180" = price_inquiry (เริ่มด้วยราคา ต้องการสั่งซื้อ)
+- "รับ 3 ตัว 490 ส่งฟรี" = price_inquiry (เริ่มด้วยราคา ต้องการสั่งซื้อ)
+- "ราคาเท่าไหร่" = price (ถามราคาเฉยๆ ไม่ได้สั่งซื้อ)
+- "มีสีดำไหม" = color_availability (ถามว่ามีสีนั้นไหม)
+- "สีชมพูมีไหมคะ" = color_availability (ถามว่ามีสีนั้นไหม)
+- "ดำ" = color (เลือกสีเดียว ไม่ถาม)
 - "ผ้าบางไหม" = fabric_quality (ถามคุณภาพผ้า)
 - "กี่วันถึง" = shipping (ถามระยะเวลาจัดส่ง)
 - "ขอเปลี่ยนเทาเป็นโกโก้" = order_edit (แก้ไขสีในออเดอร์)
@@ -522,22 +532,37 @@ Intent ที่มีให้เลือก:
 
         # ตรวจสอบ size_after_color_quantity + payment method
         if used_intent == "size_after_color_quantity":
-            # อัพเดทไซส์ในออเดอร์
-            for size in self.SIZES_ORDERED:
-                if size in message.upper():
-                    user_context['order_info']['size'] = size
-                    break
+            # ตรวจสอบว่าข้อความนี้มีครบทั้งสี+ไซส์+จำนวนในข้อความเดียวหรือไม่
+            has_size = any(size in message.upper() for size in self.AVAILABLE_SIZES)
+            color_info = self._extract_color_quantity(message)
+            has_color_quantity = color_info.get('total_quantity', 0) > 0
 
-            # ตรวจสอบว่ามี payment method ไหม
-            cod_words = ["ปลายทาง", "COD", "เก็บปลายทาง"]
-            transfer_words = ["โอน", "ธนาคาร", "PromptPay"]
-
-            has_cod = any(word in message for word in cod_words)
-            has_transfer = any(word in message for word in transfer_words)
-
-            if has_cod or has_transfer:
-                # มีครบแล้ว เปลี่ยนเป็น order_confirm
+            if has_color_quantity and has_size:
+                # ข้อความมีครบทั้งสี+ไซส์+จำนวน ให้เป็น order_confirm
                 used_intent = "order_confirm"
+                # บันทึกข้อมูลทั้งสีและไซส์
+                user_context['order_info'].update(color_info)
+                for size in self.SIZES_ORDERED:
+                    if size in message.upper():
+                        user_context['order_info']['size'] = size
+                        break
+            else:
+                # อัพเดทไซส์ในออเดอร์ (กรณีปกติ)
+                for size in self.SIZES_ORDERED:
+                    if size in message.upper():
+                        user_context['order_info']['size'] = size
+                        break
+
+                # ตรวจสอบว่ามี payment method ไหม
+                cod_words = ["ปลายทาง", "COD", "เก็บปลายทาง"]
+                transfer_words = ["โอน", "ธนาคาร", "PromptPay"]
+
+                has_cod = any(word in message for word in cod_words)
+                has_transfer = any(word in message for word in transfer_words)
+
+                if has_cod or has_transfer:
+                    # มีครบแล้ว เปลี่ยนเป็น order_confirm
+                    used_intent = "order_confirm"
 
         # แก้ไข intent สำหรับข้อความที่มีสี+จำนวน+ไซส์ครบ
         if used_intent in ["color_with_quantity", "order_confirm"]:
@@ -578,6 +603,16 @@ Intent ที่มีให้เลือก:
             if has_waist_measurement:
                 pass  # เป็นการบอกรอบเอว ไม่ใช่จำนวนสินค้า
 
+        # ตรวจสอบ price_inquiry patterns (ลูกค้าเริ่มด้วยราคา+จำนวน)
+        price_inquiry_patterns = [
+            "รับ", "เอา", "เสา", "ขอ"  # เช่น "รับ 2 ตัว 340"
+        ]
+        has_price_inquiry_start = any(pattern in message[:10] for pattern in price_inquiry_patterns)
+        has_number_and_price = re.search(r'\d+.*\d+', message)  # มีตัวเลขอย่างน้อย 2 ตัว
+
+        if has_price_inquiry_start and has_number_and_price:
+            used_intent = "price_inquiry"
+
         # ตรวจสอบคำถามราคาเฉพาะที่ชัดเจนมาก (ลดการ override)
         clear_price_patterns = [
             "ราคาเท่าไหร่", "ราคาเท่าไร", "กี่บาท", "ขายเท่าไร", "ขายเท่าไหร่"
@@ -588,7 +623,7 @@ Intent ที่มีให้เลือก:
         has_color = any(color in message for color in self.AVAILABLE_COLORS)
         has_size = any(size in message.upper() for size in self.AVAILABLE_SIZES)
 
-        if has_clear_price_question and not has_color and not has_size:
+        if has_clear_price_question and not has_color and not has_size and used_intent != "price_inquiry":
             used_intent = "price"
 
         # ตรวจสอบ COD inquiry patterns (ลำดับความสำคัญสูง)
