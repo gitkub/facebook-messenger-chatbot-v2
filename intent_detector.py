@@ -717,17 +717,11 @@ Intent ที่มีอยู่:
                 # ข้อมูลไม่ครบ รอข้อความเพิ่มเติม
                 return None
 
-        # ถ้าไม่ใช่ rapid message ให้ประมวลผลทันที
-        if not is_rapid:
-            combined = " ".join(history['messages'])
-            # ล้าง history
-            history['messages'] = []
-            return combined
-
-        # ถ้าเป็น rapid message ตรวจสอบว่าข้อมูลครบหรือไม่
+        # ตรวจสอบข้อความรวมว่าครบหรือไม่
         combined = " ".join(history['messages'])
+
+        # ถ้าข้อมูลครบแล้ว ประมวลผลทันที
         if self._has_complete_order_info(combined):
-            # ข้อมูลครบแล้ว ประมวลผลทันที
             history['messages'] = []
             return combined
 
@@ -736,6 +730,19 @@ Intent ที่มีอยู่:
             combined = " ".join(history['messages'])
             history['messages'] = []
             return combined
+
+        # ถ้าไม่ใช่ rapid message และมีข้อความมากกว่า 1 ข้อความ ให้ประมวลผล
+        if not is_rapid and len(history['messages']) > 1:
+            combined = " ".join(history['messages'])
+            history['messages'] = []
+            return combined
+
+        # ถ้าไม่ใช่ rapid message และเป็นข้อความเดียว ให้ประมวลผลทันที (กรณีข้อความทั่วไป)
+        if not is_rapid and len(history['messages']) == 1:
+            if self._is_general_message(message):
+                combined = " ".join(history['messages'])
+                history['messages'] = []
+                return combined
 
         # ข้อมูลยังไม่ครบ รอข้อความเพิ่มเติม
         return None
