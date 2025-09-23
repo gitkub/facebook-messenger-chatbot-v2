@@ -437,53 +437,38 @@ Intent ที่มีอยู่:
                 # มีเฉพาะสี+จำนวน ไม่มีไซส์ ให้เป็น color_with_quantity
                 used_intent = "color_with_quantity"
 
-        # ตรวจสอบคำถามเกี่ยวกับความสูง รอบเอว หรือคำแนะนำไซส์
-        size_recommendation_patterns = [
-            "สูง", "ความสูง", "ตัวสูง", "165", "160", "170", "175", "180",
-            "ซม", "cm", "เซนติเมตร", "ไซส์ไหนดี", "ใส่ไซส์ไหน", "แนะนำไซส์",
-            "เอว", "รอบเอว"
+        # ตรวจสอบคำถามขอคำแนะนำไซส์เฉพาะที่ชัดเจน (ลดการ override)
+        clear_size_rec_patterns = [
+            "เอว", "รอบเอว", "ไซส์ไหนดี", "ใส่ไซส์ไหน", "แนะนำไซส์", "ควรเลือกไซส์ไหน"
         ]
-        has_size_rec_keyword = any(keyword in message for keyword in size_recommendation_patterns)
 
-        if has_size_rec_keyword:
-            # ถ้าพูดถึงความสูง รอบเอว หรือขอคำแนะนำไซส์ ให้เป็น size_recommendation
+        # ต้องมีคำถามชัดเจนและมีตัวเลข (รอบเอว) หรือมีคำขอคำแนะนำ
+        has_clear_size_request = any(pattern in message for pattern in clear_size_rec_patterns)
+        has_measurement = re.search(r'เอว\s*(\d+)', message) or re.search(r'สูง\s*(\d+)', message)
+
+        if has_clear_size_request and (has_measurement or "ควร" in message or "แนะนำ" in message):
             used_intent = "size_recommendation"
 
-            # สำหรับเอว ไม่ต้องเก็บเป็นจำนวนสินค้า เพราะเป็นรอบเอว
-            # แต่ถ้าเป็นการสั่งซื้อจริงๆ ต้องดูบริบท
+            # ตรวจสอบและเก็บข้อมูลรอบเอวถ้ามี
             waist_match = re.search(r'เอว\s*(\d+)', message)
             if waist_match:
                 # เป็นการบอกรอบเอว ไม่ใช่จำนวนสินค้า
                 pass
-            else:
-                # ตรวจสอบว่ามีจำนวนในข้อความหรือไม่ (สำหรับกรณีอื่น)
-                color_info = self._extract_color_quantity(message)
-                if color_info.get('total_quantity', 0) > 0:
-                    # ถ้ามีจำนวนในข้อความ ให้เก็บไว้
-                    user_context['order_info'].update(color_info)
 
-        # ตรวจสอบ price inquiry patterns แม้ GPT จะมั่นใจ
-        price_patterns = [
-            "รับ", "เอา", "ซื้อ", "180", "210", "490", "ค่าส่ง", "บาท",
-            "ตัว", "โปร", "ส่วนลด"
+        # ตรวจสอบคำถามราคาเฉพาะที่ชัดเจนมาก (ลดการ override)
+        clear_price_patterns = [
+            "ราคาเท่าไหร่", "ราคาเท่าไร", "กี่บาท", "ขายเท่าไร", "ขายเท่าไหร่"
         ]
-        # ตรวจสอบว่ามีคำที่เกี่ยวกับราคาหรือการซื้อขาย และมีตัวเลข และไม่มีสีหรือไซส์
-        has_price_keyword = any(keyword in message for keyword in price_patterns)
-        has_number = any(char.isdigit() for char in message)
 
-        # ตรวจสอบว่าไม่มีสีหรือไซส์ในข้อความ (เพื่อไม่ให้ชนกับ order_confirm)
+        # ต้องมีคำถามราคาชัดเจน และไม่มีสีหรือไซส์
+        has_clear_price_question = any(pattern in message for pattern in clear_price_patterns)
         colors = ["โกโก้", "โกโก", "ดำ", "ขาว", "ครีม", "ชมพู", "ฟ้า", "เทา", "กรม"]
         sizes = ["M", "L", "XL", "XXL"]
         has_color = any(color in message for color in colors)
         has_size = any(size in message.upper() for size in sizes)
 
-        if has_price_keyword and has_number and not has_color and not has_size and not has_size_rec_keyword:
-            used_intent = "price_inquiry"
-
-            # ถ้ามีจำนวนในข้อความ ให้เก็บไว้
-            color_info = self._extract_color_quantity(message)
-            if color_info.get('total_quantity', 0) > 0:
-                user_context['order_info'].update(color_info)
+        if has_clear_price_question and not has_color and not has_size:
+            used_intent = "price"
 
         # ตรวจสอบ COD inquiry patterns (ลำดับความสำคัญสูง)
         cod_inquiry_patterns = [
@@ -495,14 +480,11 @@ Intent ที่มีอยู่:
         has_cod_inquiry = any(pattern in message for pattern in cod_inquiry_patterns)
         has_cod_word = any(word in message for word in cod_words)
 
-        # ตรวจสอบ greeting patterns ก่อน
-        greeting_patterns = [
-            "สวัสดี", "หวัดดี", "hello", "hi", "สนใจ",
-            "เฮ้ย", "ฮาย", "ฮัลโหล", "สบายดี"
-        ]
-        has_greeting = any(pattern in message.lower() for pattern in greeting_patterns)
+        # ตรวจสอบ greeting patterns เฉพาะคำทักทายชัดเจน
+        exact_greetings = ["สวัสดี", "หวัดดี", "hello", "hi"]
+        is_exact_greeting = message.lower().strip() in exact_greetings
 
-        if has_greeting and len(message) < 15:  # คำทักทายสั้นๆ
+        if is_exact_greeting:
             used_intent = "greeting"
 
         # ตรวจสอบ image request intents
@@ -526,17 +508,7 @@ Intent ที่มีอยู่:
                 image_intent_found = True
                 break
 
-        # ตรวจสอบ product info inquiry patterns ถ้ายังไม่พบ image intent
-        if not image_intent_found:
-            product_info_patterns = [
-                "มีสีไหนบ้าง", "สีไหนบ้าง", "มีสีอะไรบ้าง", "สีอะไรบ้าง",
-                "มีไซส์ไหนบ้าง", "ไซส์ไหนบ้าง", "มีไซส์อะไรบ้าง", "ไซส์อะไรบ้าง",
-                "มีอะไรบ้าง", "สีและไซส์", "รายการสี", "รายการไซส์"
-            ]
-            has_product_info_inquiry = any(pattern in message for pattern in product_info_patterns)
-
-            if has_product_info_inquiry:
-                used_intent = "product_info"
+        # ลบ product info override - ให้คำถามเหล่านี้ไปยัง smart fallback แทน
 
         # ตรวจสอบ payment response patterns ก่อน (ลำดับความสำคัญสูง)
         payment_cod_response_patterns = [
