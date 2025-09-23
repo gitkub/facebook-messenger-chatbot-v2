@@ -126,11 +126,10 @@ class IntentDetector:
         conversation_history = ""
         history = user_context.get('conversation_history', [])
         if history:
-            # แสดงเฉพาะ 3 ข้อความล่าสุด
-            recent_messages = history[-3:] if len(history) > 3 else history
-            history_text = "\n".join([f"- {msg['role']}: {msg['content']}" for msg in recent_messages])
+            # ส่งประวัติการสนทนาทั้งหมด (สูงสุด 10 ข้อความ)
+            history_text = "\n".join([f"- {msg['role']}: {msg['content']}" for msg in history])
             conversation_history = f"""
-ประวัติการสนทนาล่าสุด:
+ประวัติการสนทนาทั้งหมด:
 {history_text}
 """
 
@@ -617,6 +616,7 @@ Intent ที่มีอยู่:
             payment_cod_keywords = ["ปลายทาง", "เก็บปลายทาง", "COD", "cod"]
             payment_transfer_keywords = ["โอน", "ธนาคาร", "PromptPay", "promptpay", "บัญชี"]
             order_edit_keywords = ["แก้ไข", "เปลี่ยน", "ยกเลิก", "แก้", "เปลี่ยนสี", "แก้ไขออเดอร์", "มันขาวไป", "ให้เป็นสีอื่น"]
+            fabric_quality_keywords = ["ผ้า", "บาง", "หนา", "นุ่ม", "แข็ง", "ซัก", "วัสดุ", "คอตตอน", "สแปนเด็กซ์", "ยืด", "คุณภาพ"]
 
             message_lower = message.lower()
             if any(keyword in message for keyword in payment_cod_keywords):
@@ -625,6 +625,8 @@ Intent ที่มีอยู่:
                 used_intent = "payment_transfer"
             elif any(keyword in message for keyword in order_edit_keywords):
                 used_intent = "order_edit"
+            elif any(keyword in message for keyword in fabric_quality_keywords):
+                used_intent = "fabric_quality"
 
         # ตรวจสอบ address intents หลังจากเลือก payment_cod
         if user_context.get('last_intent') == "payment_cod":
