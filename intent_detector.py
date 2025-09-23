@@ -55,6 +55,41 @@ class IntentDetector:
             print(f"Info: {file_path} not found. Running without product images.")
             return {}
 
+    def _generate_smart_fallback(self, message: str) -> str:
+        """สร้างคำตอบอัจฉริยะจาก business context เมื่อไม่สามารถจับ intent ได้"""
+        try:
+            business_info = self.business_context.get('business_info', {})
+
+            # สร้าง prompt สำหรับ AI
+            prompt = f"""คุณเป็นพนักงานขายกางเกงคนท้องที่เป็นมิตรและมีความรู้เรื่องผลิตภัณฑ์ดี
+
+ข้อมูลร้านค้า:
+{json.dumps(business_info, ensure_ascii=False, indent=2)}
+
+ลูกค้าถาม: "{message}"
+
+กรุณาตอบคำถามลูกค้าโดย:
+1. ใช้ข้อมูลจากร้านค้าเท่านั้น
+2. ตอบเป็นภาษาไทยแบบสุภาพและเป็นมิตร
+3. ถ้าไม่เกี่ยวกับสินค้าให้บอกว่า "ขออภัยค่ะ ฉันตอบได้เฉพาะเรื่องกางเกงคนท้องเท่านั้นค่ะ มีอะไรเกี่ยวกับสินค้าให้ช่วยไหมคะ"
+4. ตอบสั้นๆ กระชับ ไม่เกิน 3 ประโยค
+5. เพิ่มคำลงท้ายที่สุภาพ เช่น ค่ะ ครับ
+
+ตอบ:"""
+
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200,
+                temperature=0.7
+            )
+
+            return response.choices[0].message.content.strip()
+
+        except Exception as e:
+            print(f"Error generating smart fallback: {e}")
+            return "ขออภัยค่ะ มีปัญหาเทคนิค กรุณาลองใหม่อีกครั้งค่ะ"
+
     def detect_intent(self, message: str, user_context: Dict[str, Any]) -> IntentResult:
         """วิเคราะห์ intent จากข้อความของผู้ใช้"""
 
@@ -364,9 +399,7 @@ Intent ที่มีอยู่:
         if intent_result.confidence >= confidence_threshold and intent_result.intent != 'none':
             used_intent = intent_result.intent
         else:
-            used_intent = 'fallback'
-            # เมื่อเข้า fallback intent ให้เปิด manual mode
-            user_context['manual_mode'] = True
+            used_intent = 'smart_fallback'
 
         # แก้ไข intent ตาม business logic หากจำเป็น
         if user_context.get('last_intent') in ["color_with_quantity", "color_multiple"] and used_intent == "size_only":
@@ -582,7 +615,10 @@ Intent ที่มีอยู่:
             user_context['order_info']['address_info'] = address_info
 
         # ดึงข้อความตอบกลับ
-        reply = self.get_reply(used_intent, message, user_context)
+        if used_intent == 'smart_fallback':
+            reply = self._generate_smart_fallback(message)
+        else:
+            reply = self.get_reply(used_intent, message, user_context)
 
         # ตรวจสอบว่าต้องส่งรูปภาพหรือไม่
         image_url = None
