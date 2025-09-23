@@ -76,7 +76,7 @@ class IntentDetector:
    - เกี่ยวกับร้านค้า: ที่อยู่ร้าน ที่ตั้ง สถานที่ ส่งจากไหน
    - เกี่ยวกับการซื้อขาย: การจัดส่ง ระยะเวลาส่ง สต็อก พร้อมส่ง ประเทศผลิต การเปลี่ยนไซส์
 4. เฉพาะคำถามที่ไม่เกี่ยวกับธุรกิจเลย (เช่น อากาศ การเมือง กีฬา ข่าว) ให้ตอบ "ขออภัยค่ะ ฉันตอบได้เฉพาะเรื่องกางเกงคนท้องเท่านั้นค่ะ มีอะไรเกี่ยวกับสินค้าให้ช่วยไหมคะ"
-5. ตอบสั้นๆ กระชับ ไม่เกิน 3 ประโยค และให้ข้อมูลที่เป็นประโยชน์
+5. **สำคัญมาก: ตอบสั้นๆ กระชับ ไม่เกิน 1-2 ประโยค ห้ามยาว ห้ามอธิบายมาก**
 6. เพิ่มคำลงท้ายที่สุภาพ เช่น ค่ะ ครับ
 
 ตอบ:"""
@@ -437,23 +437,21 @@ Intent ที่มีอยู่:
                 # มีเฉพาะสี+จำนวน ไม่มีไซส์ ให้เป็น color_with_quantity
                 used_intent = "color_with_quantity"
 
-        # ตรวจสอบคำถามขอคำแนะนำไซส์เฉพาะที่ชัดเจน (ลดการ override)
-        clear_size_rec_patterns = [
-            "เอว", "รอบเอว", "ไซส์ไหนดี", "ใส่ไซส์ไหน", "แนะนำไซส์", "ควรเลือกไซส์ไหน"
-        ]
+        # ตรวจสอบคำถามขอคำแนะนำไซส์เฉพาะที่ชัดเจนมาก (เฉพาะที่มีการวัด)
+        has_waist_measurement = re.search(r'เอว\s*(\d+)', message)
+        has_height_measurement = re.search(r'สูง\s*(\d+)', message)
+        size_rec_keywords = ["ไซส์ไหนดี", "แนะนำไซส์", "ควรเลือกไซส์ไหน"]
+        has_size_question = any(keyword in message for keyword in size_rec_keywords)
 
-        # ต้องมีคำถามชัดเจนและมีตัวเลข (รอบเอว) หรือมีคำขอคำแนะนำ
-        has_clear_size_request = any(pattern in message for pattern in clear_size_rec_patterns)
-        has_measurement = re.search(r'เอว\s*(\d+)', message) or re.search(r'สูง\s*(\d+)', message)
+        # เฉพาะกรณีที่มีการวัดหรือถามเรื่องไซส์ชัดเจน และไม่มีคำว่า "ใส่" ที่ไม่เกี่ยวกับไซส์
+        is_usage_question = "ทำงาน" in message or "ออกงาน" in message or "นอน" in message
 
-        if has_clear_size_request and (has_measurement or "ควร" in message or "แนะนำ" in message):
+        if (has_waist_measurement or has_height_measurement or has_size_question) and not is_usage_question:
             used_intent = "size_recommendation"
 
-            # ตรวจสอบและเก็บข้อมูลรอบเอวถ้ามี
-            waist_match = re.search(r'เอว\s*(\d+)', message)
-            if waist_match:
-                # เป็นการบอกรอบเอว ไม่ใช่จำนวนสินค้า
-                pass
+            # เก็บข้อมูลรอบเอวถ้ามี
+            if has_waist_measurement:
+                pass  # เป็นการบอกรอบเอว ไม่ใช่จำนวนสินค้า
 
         # ตรวจสอบคำถามราคาเฉพาะที่ชัดเจนมาก (ลดการ override)
         clear_price_patterns = [
@@ -480,11 +478,14 @@ Intent ที่มีอยู่:
         has_cod_inquiry = any(pattern in message for pattern in cod_inquiry_patterns)
         has_cod_word = any(word in message for word in cod_words)
 
-        # ตรวจสอบ greeting patterns เฉพาะคำทักทายชัดเจน
-        exact_greetings = ["สวัสดี", "หวัดดี", "hello", "hi"]
-        is_exact_greeting = message.lower().strip() in exact_greetings
+        # ตรวจสอบ greeting patterns - รองรับทั้ง exact และในข้อความ
+        greeting_keywords = ["สวัสดี", "หวัดดี", "hello", "hi", "ทักทาย", "สนใจ"]
 
-        if is_exact_greeting:
+        # ตรวจสอบว่ามีคำทักทายและไม่มีคำถามเฉพาะเจาะจง
+        has_greeting = any(keyword in message.lower() for keyword in greeting_keywords)
+        has_specific_question = any(word in message for word in ["ราคา", "เท่าไหร่", "ไซส์", "สี", "ผ้า", "วัสดุ"])
+
+        if has_greeting and not has_specific_question:
             used_intent = "greeting"
 
         # ตรวจสอบ image request intents
