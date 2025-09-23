@@ -616,12 +616,15 @@ Intent ที่มีอยู่:
         elif used_intent == "fallback" or intent_result.confidence < 0.5:
             payment_cod_keywords = ["ปลายทาง", "เก็บปลายทาง", "COD", "cod"]
             payment_transfer_keywords = ["โอน", "ธนาคาร", "PromptPay", "promptpay", "บัญชี"]
+            order_edit_keywords = ["แก้ไข", "เปลี่ยน", "ยกเลิก", "แก้", "เปลี่ยนสี", "แก้ไขออเดอร์", "มันขาวไป", "ให้เป็นสีอื่น"]
 
             message_lower = message.lower()
             if any(keyword in message for keyword in payment_cod_keywords):
                 used_intent = "payment_cod"
             elif any(keyword in message_lower for keyword in payment_transfer_keywords):
                 used_intent = "payment_transfer"
+            elif any(keyword in message for keyword in order_edit_keywords):
+                used_intent = "order_edit"
 
         # ตรวจสอบ address intents หลังจากเลือก payment_cod
         if user_context.get('last_intent') == "payment_cod":
