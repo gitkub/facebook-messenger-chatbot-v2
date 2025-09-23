@@ -246,11 +246,27 @@ Intent ที่มีอยู่:
             found_colors = []
             message_remaining = message
 
-            # ใช้ลำดับจากยาวไปสั้น และลบสีที่เจอออกจากข้อความ
-            for color in colors:
-                if color in message_remaining:
+            # เรียงสีจากยาวไปสั้น เพื่อจับสีที่ยาวกว่าก่อน (เช่น "โกโก้" ก่อน "ดำ")
+            sorted_colors = sorted(colors, key=len, reverse=True)
+
+            # จับสีที่มีช่องว่างหรือแยกคำก่อน (เช่น "ดำ ขาว")
+            for color in sorted_colors:
+                # หาสีที่มีช่องว่างรอบ หรือที่ขอบข้อความ
+                patterns = [
+                    rf'(?:^|\s){re.escape(color)}(?:\s|$)',  # มีช่องว่างหรือขอบข้อความ
+                ]
+
+                for pattern in patterns:
+                    if re.search(pattern, message_remaining):
+                        found_colors.append(color)
+                        message_remaining = re.sub(pattern, ' ', message_remaining, count=1)
+                        break
+
+            # หลังจากจับสีที่แยกคำแล้ว ค่อยจับสีที่เขียนติดกัน
+            for color in sorted_colors:
+                if color not in found_colors and color in message_remaining:
                     found_colors.append(color)
-                    message_remaining = message_remaining.replace(color, '', 1)  # ลบเฉพาะครั้งแรก
+                    message_remaining = message_remaining.replace(color, '', 1)
 
             if found_colors:
                 for color in found_colors:
