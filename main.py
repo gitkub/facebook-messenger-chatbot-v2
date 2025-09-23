@@ -108,6 +108,11 @@ async def process_message(sender_id: str, message_text: str):
         # Log ผลลัพธ์
         print(f"Intent analysis result: {json.dumps(result, ensure_ascii=False, indent=2)}")
 
+        # ตรวจสอบ manual mode - ถ้าเป็น manual mode ไม่ต้องส่งข้อความ
+        if result.get('used_intent') == 'manual_mode':
+            print(f"User {sender_id} is in manual mode - bot will not respond")
+            return
+
         # ส่งข้อความตอบกลับ
         if 'image_url' in result and result['image_url']:
             # ส่งรูปภาพ
@@ -117,7 +122,8 @@ async def process_message(sender_id: str, message_text: str):
                 await send_message(sender_id, result['reply'])
         else:
             # ส่งเฉพาะข้อความ
-            await send_message(sender_id, result['reply'])
+            if result['reply']:
+                await send_message(sender_id, result['reply'])
 
     except Exception as e:
         print(f"Error processing message: {e}")
@@ -195,6 +201,41 @@ async def test_message(message: Dict[str, str]):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
+
+@app.post("/admin/reset-manual-mode")
+async def reset_manual_mode(request: Dict[str, str]):
+    """Endpoint สำหรับแอดมินรีเซ็ต manual mode ของลูกค้า"""
+    if not intent_detector:
+        raise HTTPException(status_code=500, detail="Intent detector not initialized")
+
+    user_id = request.get("user_id", "")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="User ID is required")
+
+    try:
+        success = intent_detector.reset_manual_mode(user_id)
+        if success:
+            return {"status": "success", "message": f"Manual mode reset for user {user_id}"}
+        else:
+            return {"status": "error", "message": f"User {user_id} not found"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error resetting manual mode: {str(e)}")
+
+@app.get("/admin/manual-mode-status/{user_id}")
+async def get_manual_mode_status(user_id: str):
+    """Endpoint สำหรับตรวจสอบสถานะ manual mode ของลูกค้า"""
+    if not intent_detector:
+        raise HTTPException(status_code=500, detail="Intent detector not initialized")
+
+    try:
+        manual_mode = intent_detector.get_manual_mode_status(user_id)
+        return {
+            "user_id": user_id,
+            "manual_mode": manual_mode,
+            "status": "manual" if manual_mode else "auto"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking manual mode status: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

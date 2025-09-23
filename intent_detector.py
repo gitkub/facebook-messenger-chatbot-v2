@@ -22,7 +22,8 @@ class IntentDetector:
             self.user_contexts[user_id] = {
                 'last_intent': None,
                 'last_message': None,
-                'order_info': {}
+                'order_info': {},
+                'manual_mode': False
             }
         return self.user_contexts[user_id]
 
@@ -346,6 +347,19 @@ Intent ที่มีอยู่:
         # ดึง context ของ user นี้
         user_context = self._get_user_context(user_id)
 
+        # ตรวจสอบ manual mode - ถ้าเป็น manual mode ให้หยุดตอบ
+        if user_context.get('manual_mode', False):
+            return {
+                'detected_intent': 'manual_mode',
+                'confidence': 1.0,
+                'reason': 'User is in manual mode - admin handling required',
+                'used_intent': 'manual_mode',
+                'reply': None,  # ไม่ส่งข้อความตอบกลับ
+                'original_message': message,
+                'order_info': user_context['order_info'].copy(),
+                'manual_mode': True
+            }
+
         intent_result = self.detect_intent(message, user_context)
 
         # ตัดสินใจว่าจะใช้ intent ที่ตรวจจับได้หรือใช้ fallback
@@ -353,6 +367,8 @@ Intent ที่มีอยู่:
             used_intent = intent_result.intent
         else:
             used_intent = 'fallback'
+            # เมื่อเข้า fallback intent ให้เปิด manual mode
+            user_context['manual_mode'] = True
 
         # แก้ไข intent ตาม business logic หากจำเป็น
         if user_context.get('last_intent') in ["color_with_quantity", "color_multiple"] and used_intent == "size_only":
@@ -630,3 +646,15 @@ Intent ที่มีอยู่:
             return self.product_images.get("product_catalog")
 
         return None
+
+    def reset_manual_mode(self, user_id: str) -> bool:
+        """รีเซ็ต manual mode สำหรับ user คืนค่า True ถ้าสำเร็จ"""
+        if user_id in self.user_contexts:
+            self.user_contexts[user_id]['manual_mode'] = False
+            return True
+        return False
+
+    def get_manual_mode_status(self, user_id: str) -> bool:
+        """ตรวจสอบสถานะ manual mode ของ user"""
+        user_context = self._get_user_context(user_id)
+        return user_context.get('manual_mode', False)
