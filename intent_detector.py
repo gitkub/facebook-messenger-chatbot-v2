@@ -604,13 +604,19 @@ Intent ที่มีให้เลือก:
                 pass  # เป็นการบอกรอบเอว ไม่ใช่จำนวนสินค้า
 
         # ตรวจสอบ price_inquiry patterns (ลูกค้าเริ่มด้วยราคา+จำนวน)
+        # แต่ไม่ override ถ้ามีข้อมูลออเดอร์ครบถ้วนแล้ว
         price_inquiry_patterns = [
             "รับ", "เอา", "เสา", "ขอ"  # เช่น "รับ 2 ตัว 340"
         ]
         has_price_inquiry_start = any(pattern in message[:10] for pattern in price_inquiry_patterns)
         has_number_and_price = re.search(r'\d+.*\d+', message)  # มีตัวเลขอย่างน้อย 2 ตัว
 
-        if has_price_inquiry_start and has_number_and_price:
+        # ตรวจสอบว่ามีข้อมูลออเดอร์ครบถ้วนหรือไม่
+        has_color = any(color in message for color in self.AVAILABLE_COLORS)
+        has_size = any(size in message.upper() for size in self.AVAILABLE_SIZES)
+        has_complete_order = has_color and has_size and (used_intent in ["color_with_quantity", "order_confirm"])
+
+        if has_price_inquiry_start and has_number_and_price and not has_complete_order:
             used_intent = "price_inquiry"
 
         # ตรวจสอบคำถามราคาเฉพาะที่ชัดเจนมาก (ลดการ override)
@@ -620,8 +626,6 @@ Intent ที่มีให้เลือก:
 
         # ต้องมีคำถามราคาชัดเจน และไม่มีสีหรือไซส์
         has_clear_price_question = any(pattern in message for pattern in clear_price_patterns)
-        has_color = any(color in message for color in self.AVAILABLE_COLORS)
-        has_size = any(size in message.upper() for size in self.AVAILABLE_SIZES)
 
         if has_clear_price_question and not has_color and not has_size and used_intent != "price_inquiry":
             used_intent = "price"
