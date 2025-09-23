@@ -1,4 +1,5 @@
 import json
+import re
 import openai
 from typing import Dict, Any
 from pydantic import BaseModel
@@ -164,7 +165,6 @@ Intent ที่มีอยู่:
 
     def _extract_color_quantity(self, message: str) -> Dict[str, Any]:
         """แยกข้อมูลสีและจำนวนจากข้อความ"""
-        import re
 
         colors = ["โกโก้", "โกโก", "ดำ", "ขาว", "ครีม", "ชมพู", "ฟ้า", "เทา", "กรม"]
         result = {'colors': [], 'total_quantity': 0}
@@ -228,7 +228,6 @@ Intent ที่มีอยู่:
 
     def _analyze_address(self, message: str) -> Dict[str, Any]:
         """วิเคราะห์ข้อมูลที่อยู่ว่าครบถ้วนหรือไม่"""
-        import re
 
         result = {
             'has_name': False,
@@ -328,7 +327,6 @@ Intent ที่มีอยู่:
 
             # ถ้าเป็น size_recommendation ให้แทนที่คำแนะนำไซส์
             elif intent == 'size_recommendation':
-                import re
                 waist_match = re.search(r'เอว\s*(\d+)', message)
                 if waist_match:
                     waist_size = int(waist_match.group(1))
@@ -416,7 +414,6 @@ Intent ที่มีอยู่:
 
             # สำหรับเอว ไม่ต้องเก็บเป็นจำนวนสินค้า เพราะเป็นรอบเอว
             # แต่ถ้าเป็นการสั่งซื้อจริงๆ ต้องดูบริบท
-            import re
             waist_match = re.search(r'เอว\s*(\d+)', message)
             if waist_match:
                 # เป็นการบอกรอบเอว ไม่ใช่จำนวนสินค้า
@@ -658,5 +655,3 @@ Intent ที่มีอยู่:
         """ตรวจสอบสถานะ manual mode ของ user"""
         user_context = self._get_user_context(user_id)
         return user_context.get('manual_mode', False)
-
-
