@@ -493,12 +493,12 @@ Intent ที่มีอยู่:
 
         # ตรวจสอบ greeting patterns ก่อน
         greeting_patterns = [
-            "สวัสดี", "หวัดดี", "hello", "hi", "ดี", "สนใจ",
+            "สวัสดี", "หวัดดี", "hello", "hi", "สนใจ",
             "เฮ้ย", "ฮาย", "ฮัลโหล", "สบายดี"
         ]
         has_greeting = any(pattern in message.lower() for pattern in greeting_patterns)
 
-        if has_greeting and len(message) < 20:  # คำทักทายสั้นๆ
+        if has_greeting and len(message) < 15:  # คำทักทายสั้นๆ
             used_intent = "greeting"
 
         # ตรวจสอบ image request intents
