@@ -157,7 +157,7 @@ Intent ที่มีอยู่:
 }}
 
 หลักเกณฑ์:
-- confidence ≥ 0.55 ถึงจะถือว่าตรง
+- confidence ≥ 0.45 ถึงจะถือว่าตรง
 - ถ้าไม่แน่ใจให้ใส่ "none" และ confidence ต่ำ
 - วิเคราะห์จากความหมายโดยรวม ไม่ใช่แค่คำเดียว
 """
@@ -375,7 +375,7 @@ Intent ที่มีอยู่:
         else:
             return self.replies.get('fallback', {}).get('reply', 'ขอบคุณที่ติดต่อค่ะ')
 
-    def process_message(self, message: str, user_id: str = "default", confidence_threshold: float = 0.55) -> Dict[str, Any]:
+    def process_message(self, message: str, user_id: str = "default", confidence_threshold: float = 0.45) -> Dict[str, Any]:
         """ประมวลผลข้อความและคืนค่าผลลัพธ์พร้อมข้อความตอบกลับ"""
         # ดึง context ของ user นี้
         user_context = self._get_user_context(user_id)
