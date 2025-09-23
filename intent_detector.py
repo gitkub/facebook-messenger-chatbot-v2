@@ -713,6 +713,11 @@ Intent ที่มีอยู่:
                 combined = " ".join(history['messages'])
                 history['messages'] = []
                 return combined
+            # ถ้ามีหลายสีในข้อความเดียว ให้ประมวลผลทันที (เช่น "ดำ ครีม")
+            elif self._has_multiple_colors(message):
+                combined = " ".join(history['messages'])
+                history['messages'] = []
+                return combined
             else:
                 # ข้อมูลไม่ครบ รอข้อความเพิ่มเติม
                 return None
@@ -776,6 +781,17 @@ Intent ที่มีอยู่:
 
         # ตรวจสอบว่าข้อความมีคำทั่วไปหรือไม่
         return any(pattern in message.lower() for pattern in general_patterns)
+
+    def _has_multiple_colors(self, message: str) -> bool:
+        """ตรวจสอบว่าข้อความมีหลายสีหรือไม่"""
+        colors = ["โกโก้", "โกโก", "ดำ", "ขาว", "ครีม", "ชมพู", "ฟ้า", "เทา", "กรม"]
+        found_colors = []
+
+        for color in colors:
+            if color in message:
+                found_colors.append(color)
+
+        return len(found_colors) >= 2
 
     def process_delayed_message(self, user_id: str, confidence_threshold: float = 0.55) -> Dict[str, Any]:
         """ประมวลผลข้อความที่รอเวลาครบแล้ว (เรียกจาก timer)"""
