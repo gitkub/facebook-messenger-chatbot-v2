@@ -24,7 +24,8 @@ class IntentDetector:
                 'last_intent': None,
                 'last_message': None,
                 'order_info': {},
-                'manual_mode': False
+                'manual_mode': False,
+                'conversation_history': []
             }
         return self.user_contexts[user_id]
 
@@ -121,9 +122,21 @@ class IntentDetector:
 ห้ามเลือก size_only เด็ดขาด เพราะลูกค้าแจ้งจำนวนไปแล้ว
 """
 
+        # เพิ่มประวัติการสนทนา (sliding window)
+        conversation_history = ""
+        history = user_context.get('conversation_history', [])
+        if history:
+            # แสดงเฉพาะ 3 ข้อความล่าสุด
+            recent_messages = history[-3:] if len(history) > 3 else history
+            history_text = "\n".join([f"- {msg['role']}: {msg['content']}" for msg in recent_messages])
+            conversation_history = f"""
+ประวัติการสนทนาล่าสุด:
+{history_text}
+"""
+
         prompt = f"""
 คุณเป็น AI ที่ช่วยวิเคราะห์ความตั้งใจ (intent) ของข้อความลูกค้าในร้านกางเกงคนท้อง
-{business_info}{conversation_context}
+{business_info}{conversation_context}{conversation_history}
 ข้อความจากลูกค้า: "{message}"
 
 Intent ที่มีอยู่:
@@ -266,7 +279,7 @@ Intent ที่มีอยู่:
             return "🎯 รอบเอวของคุณใหญ่กว่าไซส์ที่มี (XXL เอว 40-50)\nแนะนำให้ปรึกษาแอดมินก่อนสั่งค่ะ"
 
     def _analyze_address(self, message: str) -> Dict[str, Any]:
-        """วิเคราะห์ข้อมูลที่อยู่ว่าครบถ้วนหรือไม่"""
+        """วิเคราะห์ข้อมูลที่อยู่ว่าครบถ้วนหรือไม่ - ปรับปรุงให้รองรับรูปแบบจริง"""
 
         result = {
             'has_name': False,
@@ -277,38 +290,90 @@ Intent ที่มีอยู่:
             'extracted_phone': ''
         }
 
-        # ตรวจสอบเบอร์โทร (10-11 หลัก)
+        # ตรวจสอบเบอร์โทร (รองรับรูปแบบหลากหลาย)
         phone_patterns = [
-            r'0\d{8,9}',  # 081234567, 0812345678
-            r'\d{10,11}',  # 1234567890, 12345678901
+            r'Tel:\s*(\d{3}-\d{3}-\d{4})',      # Tel:083-998-9896
+            r'โทร\s+(\d{3}-\d{3}-\d{4})',       # โทร 083-038-9746
+            r'\(\s*โทร\s+(\d{3}-\d{3}-\d{4})\)', # (โทร 083-038-9746)
+            r'(\d{3}-\d{3}-\d{4})',             # 064-653-6992, 098-827-3472
+            r'(\d{3}\s?\d{3}\s?\d{4})',         # 064 653 6992, 0646536992
+            r'\((\d{10,11})\)',                 # (0937619828)
+            r'(\d{10,11})',                     # 0812345678, 081234567
         ]
 
         for pattern in phone_patterns:
             phone_match = re.search(pattern, message)
             if phone_match:
                 result['has_phone'] = True
-                result['extracted_phone'] = phone_match.group()
+                # ดึงหมายเลขจาก group ที่ 1 (ใน parentheses) หรือ group 0
+                phone_number = phone_match.group(1) if phone_match.groups() else phone_match.group(0)
+                # ทำความสะอาดเบอร์โทร (เอาเครื่องหมายออก)
+                phone_clean = re.sub(r'[\s\-\(\)]', '', phone_number)
+                result['extracted_phone'] = phone_clean
                 break
 
-        # ตรวจสอบที่อยู่ (มีตัวเลข + คำที่เกี่ยวกับที่อยู่)
-        address_keywords = ['บ้าน', 'ถนน', 'ซอย', 'ตำบล', 'อำเภอ', 'จังหวัด', 'หมู่', 'ม.', 'ต.', 'อ.', 'จ.']
+        # ตรวจสอบที่อยู่ (เพิ่ม keywords ที่หลากหลาย)
+        address_keywords = [
+            # พื้นฐาน
+            'บ้าน', 'ถนน', 'ซอย', 'ตำบล', 'อำเภอ', 'จังหวัด', 'หมู่',
+            # ย่อ
+            'ม.', 'ต.', 'อ.', 'จ.', 'ถ.',
+            # กรุงเทพ
+            'แขวง', 'เขต', 'กทม', 'กรุงเทพ', 'กรุงเทพมหานคร',
+            # อื่นๆ
+            'หมู่บ้าน', 'โครงการ', 'คอนโด', 'อพาร์ท', 'Add:', 'Add', 'Address'
+        ]
+
         has_number = bool(re.search(r'\d+', message))
-        has_address_keyword = any(keyword in message for keyword in address_keywords)
+        has_address_keyword = any(keyword.lower() in message.lower() for keyword in address_keywords)
 
         if has_number and has_address_keyword:
             result['has_address'] = True
             # แยกที่อยู่ออกมา (ลบเบอร์โทรออก)
-            address_text = re.sub(r'0\d{8,9}', '', message).strip()
+            address_text = message
+            for pattern in phone_patterns:
+                address_text = re.sub(pattern, '', address_text)
+            # ลบคำที่ไม่เกี่ยวข้อง
+            address_text = re.sub(r'Tel:\s*|โทร\s*|เบอร์\s*|\(\s*โทร\s*|\)', '', address_text).strip()
             result['extracted_address'] = address_text
 
-        # ตรวจสอบชื่อ (คำ 2-3 คำแรกที่ไม่ใช่ address keywords)
-        words = message.split()
-        name_words = []
-        for word in words[:3]:  # ดูเฉพาะ 3 คำแรก
-            if not any(keyword in word for keyword in address_keywords) and not re.search(r'\d{3,}', word):
-                name_words.append(word)
+        # ตรวจสอบชื่อ (ปรับปรุงให้ดีขึ้น)
+        # ลบข้อมูลที่ไม่ใช่ชื่อออกก่อน
+        clean_message = message
+        for pattern in phone_patterns:
+            clean_message = re.sub(pattern, '', clean_message)
+        clean_message = re.sub(r'Tel:\s*|โทร\s*|เบอร์\s*|\(\s*โทร\s*|\)|Add:\s*|Address:\s*', '', clean_message)
 
-        if len(name_words) >= 1:  # มีอย่างน้อย 1 คำที่เป็นชื่อ
+        words = clean_message.split()
+        name_words = []
+
+        # ชื่อ indicators
+        name_indicators = ['นาย', 'นาง', 'นางสาว', 'คุณ', 'ร้าน', 'บริษัท', 'ห้าง', 'Mr.', 'Mrs.', 'Ms.']
+
+        # หาชื่อจากคำที่เป็น indicators หรือคำแรกๆ
+        found_indicator = False
+        for i, word in enumerate(words):
+            # ถ้าเจอ indicator ให้เอาคำถัดไปเป็นชื่อ
+            if any(indicator in word for indicator in name_indicators):
+                found_indicator = True
+                name_words.append(word)
+                # เอาคำถัดไปด้วย (สำหรับนามสกุล)
+                if i + 1 < len(words) and not any(keyword.lower() in words[i+1].lower() for keyword in address_keywords):
+                    if not re.search(r'\d{3,}', words[i+1]):  # ไม่ใช่เลขที่บ้าน
+                        name_words.append(words[i+1])
+                break
+
+        # ถ้าไม่เจอ indicator ให้ดูคำแรกๆ ที่ไม่ใช่ address keywords
+        if not found_indicator:
+            for word in words[:4]:  # ดู 4 คำแรก
+                if not any(keyword.lower() in word.lower() for keyword in address_keywords):
+                    if not re.search(r'\d{3,}', word):  # ไม่ใช่เลขที่บ้าน
+                        if not re.search(r'[\d\-\(\)]', word):  # ไม่ใช่เบอร์โทร
+                            name_words.append(word)
+                            if len(name_words) >= 2:  # เอาแค่ 2 คำ
+                                break
+
+        if len(name_words) >= 1:
             result['has_name'] = True
             result['extracted_name'] = ' '.join(name_words)
 
@@ -605,6 +670,29 @@ Intent ที่มีอยู่:
         # เก็บ intent และข้อความล่าสุดเพื่อใช้ในการวิเคราะห์ครั้งต่อไป
         user_context['last_intent'] = used_intent
         user_context['last_message'] = message
+
+        # เพิ่มข้อความใน conversation history (sliding window)
+        if 'conversation_history' not in user_context:
+            user_context['conversation_history'] = []
+
+        # เพิ่มข้อความของผู้ใช้
+        user_context['conversation_history'].append({
+            'role': 'user',
+            'content': message,
+            'intent': used_intent
+        })
+
+        # เพิ่มการตอบกลับของบอท (ถ้ามี)
+        if reply:
+            user_context['conversation_history'].append({
+                'role': 'bot',
+                'content': reply,
+                'intent': used_intent
+            })
+
+        # จำกัด history ไว้เฉพาะ 10 ข้อความล่าสุด (sliding window)
+        if len(user_context['conversation_history']) > 10:
+            user_context['conversation_history'] = user_context['conversation_history'][-10:]
 
         result = {
             'detected_intent': intent_result.intent,
