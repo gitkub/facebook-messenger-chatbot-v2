@@ -617,6 +617,7 @@ Intent ที่มีอยู่:
             payment_transfer_keywords = ["โอน", "ธนาคาร", "PromptPay", "promptpay", "บัญชี"]
             order_edit_keywords = ["แก้ไข", "เปลี่ยน", "ยกเลิก", "แก้", "เปลี่ยนสี", "แก้ไขออเดอร์", "มันขาวไป", "ให้เป็นสีอื่น"]
             fabric_quality_keywords = ["ผ้า", "บาง", "หนา", "นุ่ม", "แข็ง", "ซัก", "วัสดุ", "คอตตอน", "สแปนเด็กซ์", "ยืด", "คุณภาพ"]
+            product_length_keywords = ["ยาว", "ความยาว", "ขนาด", "เซนติเมตร", "ซม", "เมตร", "เท่าไหร่", "กี่", "มิติ"]
 
             # ตรวจสอบสีที่มีจำหน่าย - ให้ความสำคัญสูงสุด
             colors = ["โกโก้", "โกโก", "ดำ", "ขาว", "ครีม", "ชมพู", "ฟ้า", "เทา", "กรม"]
@@ -629,12 +630,14 @@ Intent ที่มีอยู่:
                 used_intent = "payment_transfer"
             elif any(keyword in message for keyword in order_edit_keywords):
                 used_intent = "order_edit"
-            elif len(colors_found) >= 2 and not any(keyword in message for keyword in fabric_quality_keywords):
-                # หลายสีแต่ไม่ใช่คำถามเรื่องผ้า
+            elif len(colors_found) >= 2 and not any(keyword in message for keyword in fabric_quality_keywords) and not any(keyword in message for keyword in product_length_keywords):
+                # หลายสีแต่ไม่ใช่คำถามเรื่องผ้าหรือความยาว
                 used_intent = "color_multiple"
-            elif len(colors_found) == 1 and not any(keyword in message for keyword in fabric_quality_keywords):
-                # สีเดียวแต่ไม่ใช่คำถามเรื่องผ้า
+            elif len(colors_found) == 1 and not any(keyword in message for keyword in fabric_quality_keywords) and not any(keyword in message for keyword in product_length_keywords):
+                # สีเดียวแต่ไม่ใช่คำถามเรื่องผ้าหรือความยาว
                 used_intent = "color"
+            elif any(keyword in message for keyword in product_length_keywords):
+                used_intent = "product_length"
             elif any(keyword in message for keyword in fabric_quality_keywords):
                 used_intent = "fabric_quality"
 
