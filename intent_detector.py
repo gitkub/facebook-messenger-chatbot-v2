@@ -697,9 +697,10 @@ Intent ที่มีอยู่:
 
         history = self.message_history[user_id]
 
-        # ตรวจสอบว่าเป็น rapid message หรือไม่ (ภายใน 5 วินาที)
+        # ตรวจสอบว่าเป็น rapid message หรือไม่ (ภายใน 10 วินาที)
+        # เพิ่มจาก 5 เป็น 10 วินาที เพื่อให้เวลาลูกค้าพิมพ์หลายสี
         time_diff = current_time - history['last_update']
-        is_rapid = time_diff <= 5.0 and len(history['messages']) > 0
+        is_rapid = time_diff <= 10.0 and len(history['messages']) > 0
 
         # เพิ่มข้อความใหม่เข้า history
         history['messages'].append(message)
@@ -718,6 +719,10 @@ Intent ที่มีอยู่:
                 combined = " ".join(history['messages'])
                 history['messages'] = []
                 return combined
+            # ถ้าเป็นสีเดียวและมี context สีอื่นใน order_info ให้รอเพิ่มเติม
+            elif self._is_single_color_only(message) and self._has_existing_colors_in_context(user_id):
+                # มีสีอื่นอยู่แล้ว รอข้อความเพิ่มเติม (ไซส์)
+                return None
             else:
                 # ข้อมูลไม่ครบ รอข้อความเพิ่มเติม
                 return None
@@ -730,8 +735,9 @@ Intent ที่มีอยู่:
             history['messages'] = []
             return combined
 
-        # ถ้าข้อความมี 3 ข้อความแล้ว ให้ประมวลผล (ไม่รอแล้ว)
-        if len(history['messages']) >= 3:
+        # ถ้าข้อความมี 4 ข้อความแล้ว ให้ประมวลผล (ไม่รอแล้ว)
+        # เปลี่ยนจาก 3 เป็น 4 เพื่อรองรับกรณี หลายสี + ไซส์
+        if len(history['messages']) >= 4:
             combined = " ".join(history['messages'])
             history['messages'] = []
             return combined
@@ -792,6 +798,32 @@ Intent ที่มีอยู่:
                 found_colors.append(color)
 
         return len(found_colors) >= 2
+
+    def _is_single_color_only(self, message: str) -> bool:
+        """ตรวจสอบว่าเป็นสีเดียวอย่างเดียวหรือไม่ (ไม่มีไซส์/จำนวน)"""
+        colors = ["โกโก้", "โกโก", "ดำ", "ขาว", "ครีม", "ชมพู", "ฟ้า", "เทา", "กรม"]
+        sizes = ["M", "L", "XL", "XXL"]
+
+        # ตรวจสอบว่ามีสีหนึ่งสี
+        found_color = False
+        for color in colors:
+            if color in message:
+                if found_color:  # มีสีมากกว่า 1 สี
+                    return False
+                found_color = True
+
+        # ตรวจสอบว่าไม่มีไซส์หรือจำนวน
+        has_size = any(size in message.upper() for size in sizes)
+        has_number = any(char.isdigit() for char in message)
+
+        return found_color and not has_size and not has_number
+
+    def _has_existing_colors_in_context(self, user_id: str) -> bool:
+        """ตรวจสอบว่ามีสีอื่นใน user context หรือไม่"""
+        user_context = self._get_user_context(user_id)
+        order_info = user_context.get('order_info', {})
+        colors = order_info.get('colors', [])
+        return len(colors) > 0
 
     def process_delayed_message(self, user_id: str, confidence_threshold: float = 0.55) -> Dict[str, Any]:
         """ประมวลผลข้อความที่รอเวลาครบแล้ว (เรียกจาก timer)"""
