@@ -494,6 +494,21 @@ Intent ที่มีให้เลือก:
                     # ถ้าไม่มีข้อมูลรอบเอว ให้คำแนะนำทั่วไป
                     reply = reply.replace('[size_suggestion]', "💡 กรุณาแจ้งรอบเอวปัจจุบันของคุณ จะได้แนะนำไซส์ที่เหมาะสมค่ะ")
 
+            # ถ้าเป็น show_product_image ให้แทนที่ชื่อสี
+            elif intent == 'show_product_image':
+                # หาสีที่ขอดูจากข้อความ
+                detected_color = None
+                for color in self.AVAILABLE_COLORS:
+                    if color in message:
+                        detected_color = color
+                        break
+
+                if detected_color:
+                    reply = reply.replace('{color}', detected_color)
+                else:
+                    # ถ้าไม่เจอสี ให้ลบ {color} ออก
+                    reply = reply.replace('{color}', '')
+
             return reply
         else:
             return self.replies.get('fallback', {}).get('reply', 'ขอบคุณที่ติดต่อค่ะ')
